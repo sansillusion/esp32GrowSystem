@@ -212,7 +212,7 @@ void handleTimer() {
   }
   contenu += lamin;
   contenu += "</h1>\n"
-             "<form>\n";
+             "<form>\n"
              "<h2>Allumage :</h2>\n"
              "H:";
   for (int i = 0; i < 6; i = i + 1) {
