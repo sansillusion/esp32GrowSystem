@@ -1,3 +1,5 @@
+#include <NTPClient.h>
+#include <time.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <DNSServer.h>
@@ -6,11 +8,11 @@
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
 #include <DS3231.h>
+#include <WiFiUdp.h>
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <Preferences.h>
-#include <esp_task_wdt.h>
 #if CONFIG_FREERTOS_UNICORE
 #define ARDUINO_RUNNING_CORE 0
 #else
@@ -18,9 +20,11 @@
 #endif
 
 Preferences preferences;
-
 WebServer server(80);
-
+WiFiUDP ntpUDP;
+//NTPClient timeClient(ntpUDP);
+NTPClient timeClient(ntpUDP, "time.nrc.ca", -14400, 120000);//heure hiver
+//NTPClient timeClient(ntpUDP, "time.nrc.ca", -18000, 120000);//heure ete
 #define ONE_WIRE_BUS_PIN 33 // pin 33
 OneWire oneWire(ONE_WIRE_BUS_PIN);
 DallasTemperature sensors(&oneWire);
@@ -33,15 +37,16 @@ int passer[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir quel est desactivee
 int passerx[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir quel est desactivee par temperature
 int etat[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir quel etat est la led
 int senseur[] = {0, 1, 2, 3, 4, 5}; // confir pour savoir quel senseur pour quel led
-int allumeH[] = {8, 8, 8, 8, 8, 8}; // confir pour savoir quel heur allumer
-int allumeM[] = {0, 10, 20, 30, 40, 50}; // confir pour savoir quel minute allumer
-int eteintH[] = {22, 22, 22, 22, 22, 22}; // confir pour savoir quel heur eteindre
-int eteintM[] = {0, 10, 20, 30, 40, 50}; // confir pour savoir quel minute eteindre
+int allumeH[] = {4, 4, 4, 5, 5, 5}; // confir pour savoir quel heur allumer
+int allumeM[] = {0, 30, 55, 0, 30, 55}; // confir pour savoir quel minute allumer
+int eteintH[] = {21, 21, 21, 4, 4, 4}; // confir pour savoir quel heur eteindre
+int eteintM[] = {0, 30, 55, 0, 45, 55}; // confir pour savoir quel minute eteindre
 int derntemp[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir la temp de la led
 int erreur[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir combien erreur de senseur de suite
 int configur = 0; // config pour savoir si first run
 unsigned long previousMillis = 0;
 unsigned long previousMillisc = 0;
+unsigned long previousMillist = 0;
 
 DS3231 Clock;
 bool Century = false;
@@ -67,7 +72,9 @@ char* string2char(String command) {
     char *p = const_cast<char*>(command.c_str());
     return p;
   }
+  return 0;
 }
+
 String printAddress(DeviceAddress deviceAddress)
 {
   String retour = "";
@@ -78,244 +85,6 @@ String printAddress(DeviceAddress deviceAddress)
   }
   return retour;
 }
-void setup() {
-  Serial.begin(115200);
-  Wire.begin();
-  sensors.begin();
-  for (int i = 0; i < 6; i = i + 1) {
-    pinMode(growled[i], OUTPUT);
-    digitalWrite(growled[i], LOW); //Eteint la lumiere
-  }
-  preferences.begin("420", false);
-  String tst0 = preferences.getString("add0", "0");
-  if (tst0 == "0") {
-    if (!sensors.getAddress(Probe0, 0)) {
-      Serial.println("Erreure pas de senseurs 0");
-      passer[0] = 1;
-    } else {
-      String tsts0 = printAddress(Probe0);
-      Serial.print("Addresse du senseur 0 : ");
-      Serial.println(tsts0);
-      preferences.putString("add0", tsts0);
-    }
-  } else {
-    if (!sensors.getAddress(Probe0, 0)) {
-      Serial.println("Erreure senseurs 0 non fonctionnel !");
-      passer[0] = 1;
-    } else {
-      String tsts0 = printAddress(Probe0);
-      if (tst0 == tsts0) {
-        Serial.println("Senseur 0 OK !");
-      } else {
-        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
-        for (int i = 0; i < 6; i = i + 1) {
-          passer[i] = 1;
-        }
-      }
-    }
-  }
-  String tst1 = preferences.getString("add1", "0");
-  if (tst1 == "0") {
-    if (!sensors.getAddress(Probe1, 1)) {
-      Serial.println("Erreure pas de senseurs 1");
-      passer[1] = 1;
-    } else {
-      String tsts1 = printAddress(Probe1);
-      Serial.print("Addresse du senseur 1 : ");
-      Serial.println(tsts1);
-      preferences.putString("add1", tsts1);
-    }
-  } else {
-    if (!sensors.getAddress(Probe1, 1)) {
-      Serial.println("Erreure senseurs 1 non fonctionnel !");
-      passer[1] = 1;
-    } else {
-      String tsts1 = printAddress(Probe1);
-      if (tst1 == tsts1) {
-        Serial.println("Senseur 1 OK !");
-      } else {
-        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
-        for (int i = 0; i < 6; i = i + 1) {
-          passer[i] = 1;
-        }
-      }
-    }
-  }
-  String tst2 = preferences.getString("add2", "0");
-  if (tst2 == "0") {
-    if (!sensors.getAddress(Probe2, 2)) {
-      Serial.println("Erreure pas de senseurs 2");
-      passer[2] = 1;
-    } else {
-      String tsts2 = printAddress(Probe2);
-      Serial.print("Addresse du senseur 2 : ");
-      Serial.println(tsts2);
-      preferences.putString("add2", tsts2);
-    }
-  } else {
-    if (!sensors.getAddress(Probe2, 2)) {
-      Serial.println("Erreure senseurs 2 non fonctionnel !");
-      passer[2] = 1;
-    } else {
-      String tsts2 = printAddress(Probe2);
-      if (tst2 == tsts2) {
-        Serial.println("Senseur 2 OK !");
-      } else {
-        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
-        for (int i = 0; i < 6; i = i + 1) {
-          passer[i] = 1;
-        }
-      }
-    }
-  }
-  String tst3 = preferences.getString("add3", "0");
-  if (tst3 == "0") {
-    if (!sensors.getAddress(Probe3, 3)) {
-      Serial.println("Erreure pas de senseurs 3");
-      passer[3] = 1;
-    } else {
-      String tsts3 = printAddress(Probe3);
-      Serial.print("Addresse du senseur 3 : ");
-      Serial.println(tsts3);
-      preferences.putString("add3", tsts3);
-    }
-  } else {
-    if (!sensors.getAddress(Probe3, 3)) {
-      Serial.println("Erreure senseurs 3 non fonctionnel !");
-      passer[3] = 1;
-    } else {
-      String tsts3 = printAddress(Probe3);
-      if (tst3 == tsts3) {
-        Serial.println("Senseur 3 OK !");
-      } else {
-        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
-        for (int i = 0; i < 6; i = i + 1) {
-          passer[i] = 1;
-        }
-      }
-    }
-  }
-  String tst4 = preferences.getString("add4", "0");
-  if (tst4 == "0") {
-    if (!sensors.getAddress(Probe4, 4)) {
-      Serial.println("Erreure pas de senseurs 4");
-      passer[4] = 1;
-    } else {
-      String tsts4 = printAddress(Probe4);
-      Serial.print("Addresse du senseur 4 : ");
-      Serial.println(tsts4);
-      preferences.putString("add4", tsts4);
-    }
-  } else {
-    if (!sensors.getAddress(Probe4, 4)) {
-      Serial.println("Erreure senseurs 4 non fonctionnel !");
-      passer[4] = 1;
-    } else {
-      String tsts4 = printAddress(Probe4);
-      if (tst4 == tsts4) {
-        Serial.println("Senseur 4 OK !");
-      } else {
-        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
-        for (int i = 0; i < 6; i = i + 1) {
-          passer[i] = 1;
-        }
-      }
-    }
-  }
-  String tst5 = preferences.getString("add5", "0");
-  if (tst5 == "0") {
-    if (!sensors.getAddress(Probe5, 5)) {
-      Serial.println("Erreure pas de senseurs 5");
-      passer[5] = 1;
-    } else {
-      String tsts5 = printAddress(Probe5);
-      Serial.print("Addresse du senseur 5 : ");
-      Serial.println(tsts5);
-      preferences.putString("add5", tsts5);
-    }
-  } else {
-    if (!sensors.getAddress(Probe5, 5)) {
-      Serial.println("Erreure senseurs 5 non fonctionnel !");
-      passer[5] = 1;
-    } else {
-      String tsts5 = printAddress(Probe5);
-      if (tst5 == tsts5) {
-        Serial.println("Senseur 5 OK !");
-      } else {
-        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
-        for (int i = 0; i < 6; i = i + 1) {
-          passer[i] = 1;
-        }
-      }
-    }
-  }
-  sensors.setResolution(Probe0, 10);
-  sensors.setResolution(Probe1, 10);
-  sensors.setResolution(Probe2, 10);
-  sensors.setResolution(Probe3, 10);
-  sensors.setResolution(Probe4, 10);
-  sensors.setResolution(Probe5, 10);
-  for (int i = 0; i < 6; i = i + 1) {
-    String ala = "ala";
-    ala += i;
-    String ahs = "ah";
-    ahs += i;
-    String ams = "am";
-    ams += i;
-    String ehs = "eh";
-    ehs += i;
-    String ems = "em";
-    ems += i;
-    String sen = "se";
-    sen += i;
-    int alar = alarm[i];
-    int iah = allumeH[i];
-    int iam = allumeM[i];
-    int ieh = eteintH[i];
-    int iem = eteintM[i];
-    int sea = senseur[i];
-    int alam = preferences.getInt(string2char(ala), alar);
-    int ahi = preferences.getInt(string2char(ahs), iah);
-    int ami = preferences.getInt(string2char(ams), iam);
-    int ehi = preferences.getInt(string2char(ehs), ieh);
-    int emi = preferences.getInt(string2char(ems), iem);
-    int sed = preferences.getInt(string2char(sen), sea);
-    alarm[i] = alam;
-    allumeH[i] = ahi;
-    allumeM[i] = ami;
-    eteintH[i] = ehi;
-    eteintM[i] = emi;
-    senseur[i] = sed;
-  }
-  configur = preferences.getInt("configur", 0);
-  //  setClockMode(false);  // 24h
-  xTaskCreatePinnedToCore(loop1, "loop1", 4096, NULL, 2, NULL, ARDUINO_RUNNING_CORE); // on dirait que les sensors aiment pas avoir une priorite de 1 alors 2 semble ok
-  WiFiManager wifiManager;
-  wifiManager.setTimeout(240);
-  if (!wifiManager.autoConnect("Setup420")) {
-    delay(3000);
-    ESP.restart();
-    delay(5000);
-  }
-  MDNS.begin("config420");// use preferance pour le nom
-  lesliens();
-  if (configur == 0) {
-    preferences.putInt("configur", 1);
-    configur = 1;
-  }
-  server.on("/", handleRoot);
-  server.on("/timer", handleTimer);
-  server.on("/senseurs", handleSenseur);
-  server.on("/changer", handleChange);
-  server.onNotFound(handleNotFound);
-  const char * headerkeys[] = {"User-Agent"} ;//peut ajouter autres si besoin eg {"User-Agent", "Cookie"}
-  size_t headerkeyssize = sizeof(headerkeys) / sizeof(char*);
-  server.collectHeaders(headerkeys, headerkeyssize );
-  server.begin();
-  Serial.println("Serveur web démaré");
-  MDNS.addService("_http", "_tcp", 80);
-}
-
 
 // index page
 void handleRoot() {
@@ -504,7 +273,6 @@ void handleSenseur() {
               "S:";
   for (int i = 0; i < 6; i = i + 1) {
     if (passer[i] == 0) {
-      int tempC = derntemp[i];
       contenu += "<input class=\"senseur\" type=\"number\" min=\"0\" max=\"5\" value=\"";
       contenu += senseur[i];
       contenu += "\" name=\"sen";
@@ -888,6 +656,43 @@ void lumiereloop() {
             }
           }
         }
+        if (allumeH[i] == eteintH[i]) {
+          if (allumeM[i] < eteintM[i]) {
+            if (lamin < eteintM[i]) {
+              if (lamin >= allumeM[i]) {
+                if (passer[i] == 0) {
+                  digitalWrite(growled[i], HIGH); //Allume la lumiere
+                  etat[i] = 1;
+                }
+              }
+            } else {
+              digitalWrite(growled[i], LOW); //Eteint la lumiere
+              etat[i] = 0;
+            }
+          }
+          if (allumeM[i] > eteintM[i]) {
+            if (lamin < eteintM[i]) {
+              if (passer[i] == 0) {
+                digitalWrite(growled[i], HIGH); //Allume la lumiere
+                etat[i] = 1;
+              }
+            } else {
+              if (lamin >= allumeM[i]) {
+                if (passer[i] == 0) {
+                  digitalWrite(growled[i], HIGH); //Allume la lumiere
+                  etat[i] = 1;
+                }
+              } else {
+                digitalWrite(growled[i], LOW); //Eteint la lumiere
+                etat[i] = 0;
+              }
+            }
+          }
+          if (allumeM[i] == eteintM[i]) { // le meme heure d'allumage et d'eteignage == eteint permanent
+            digitalWrite(growled[i], LOW); //Eteint la lumiere
+            etat[i] = 0;
+          }
+        }
       } else {
         digitalWrite(growled[i], LOW); //Eteint la lumiere car elle chauffe
         etat[i] = 0;
@@ -901,16 +706,263 @@ void lumiereloop() {
 
 void loop1(void *pvParameters) {
   while (1) {
-    //loop1 roule meme en config mode ou sans internet si deja configurer avant
     if (configur == 1) {
       unsigned long currentMillis = millis();
       if (currentMillis - previousMillis >= 1000) {
         previousMillis = currentMillis;
         lumiereloop();
       }
-      //fin du loop1 retour au top du loop1
     }
   }
+}
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+  sensors.begin();
+  for (int i = 0; i < 6; i = i + 1) {
+    pinMode(growled[i], OUTPUT);
+    digitalWrite(growled[i], LOW); //Eteint la lumiere
+  }
+  preferences.begin("420", false);
+  String tst0 = preferences.getString("add0", "0");
+  if (tst0 == "0") {
+    if (!sensors.getAddress(Probe0, 0)) {
+      Serial.println("Erreure pas de senseurs 0");
+      passer[0] = 1;
+    } else {
+      String tsts0 = printAddress(Probe0);
+      Serial.print("Addresse du senseur 0 : ");
+      Serial.println(tsts0);
+      preferences.putString("add0", tsts0);
+    }
+  } else {
+    if (!sensors.getAddress(Probe0, 0)) {
+      Serial.println("Erreure senseurs 0 non fonctionnel !");
+      passer[0] = 1;
+    } else {
+      String tsts0 = printAddress(Probe0);
+      if (tst0 == tsts0) {
+        Serial.println("Senseur 0 OK !");
+      } else {
+        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
+        for (int i = 0; i < 6; i = i + 1) {
+          passer[i] = 1;
+        }
+      }
+    }
+  }
+  String tst1 = preferences.getString("add1", "0");
+  if (tst1 == "0") {
+    if (!sensors.getAddress(Probe1, 1)) {
+      Serial.println("Erreure pas de senseurs 1");
+      passer[1] = 1;
+    } else {
+      String tsts1 = printAddress(Probe1);
+      Serial.print("Addresse du senseur 1 : ");
+      Serial.println(tsts1);
+      preferences.putString("add1", tsts1);
+    }
+  } else {
+    if (!sensors.getAddress(Probe1, 1)) {
+      Serial.println("Erreure senseurs 1 non fonctionnel !");
+      passer[1] = 1;
+    } else {
+      String tsts1 = printAddress(Probe1);
+      if (tst1 == tsts1) {
+        Serial.println("Senseur 1 OK !");
+      } else {
+        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
+        for (int i = 0; i < 6; i = i + 1) {
+          passer[i] = 1;
+        }
+      }
+    }
+  }
+  String tst2 = preferences.getString("add2", "0");
+  if (tst2 == "0") {
+    if (!sensors.getAddress(Probe2, 2)) {
+      Serial.println("Erreure pas de senseurs 2");
+      passer[2] = 1;
+    } else {
+      String tsts2 = printAddress(Probe2);
+      Serial.print("Addresse du senseur 2 : ");
+      Serial.println(tsts2);
+      preferences.putString("add2", tsts2);
+    }
+  } else {
+    if (!sensors.getAddress(Probe2, 2)) {
+      Serial.println("Erreure senseurs 2 non fonctionnel !");
+      passer[2] = 1;
+    } else {
+      String tsts2 = printAddress(Probe2);
+      if (tst2 == tsts2) {
+        Serial.println("Senseur 2 OK !");
+      } else {
+        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
+        for (int i = 0; i < 6; i = i + 1) {
+          passer[i] = 1;
+        }
+      }
+    }
+  }
+  String tst3 = preferences.getString("add3", "0");
+  if (tst3 == "0") {
+    if (!sensors.getAddress(Probe3, 3)) {
+      Serial.println("Erreure pas de senseurs 3");
+      passer[3] = 1;
+    } else {
+      String tsts3 = printAddress(Probe3);
+      Serial.print("Addresse du senseur 3 : ");
+      Serial.println(tsts3);
+      preferences.putString("add3", tsts3);
+    }
+  } else {
+    if (!sensors.getAddress(Probe3, 3)) {
+      Serial.println("Erreure senseurs 3 non fonctionnel !");
+      passer[3] = 1;
+    } else {
+      String tsts3 = printAddress(Probe3);
+      if (tst3 == tsts3) {
+        Serial.println("Senseur 3 OK !");
+      } else {
+        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
+        for (int i = 0; i < 6; i = i + 1) {
+          passer[i] = 1;
+        }
+      }
+    }
+  }
+  String tst4 = preferences.getString("add4", "0");
+  if (tst4 == "0") {
+    if (!sensors.getAddress(Probe4, 4)) {
+      Serial.println("Erreure pas de senseurs 4");
+      passer[4] = 1;
+    } else {
+      String tsts4 = printAddress(Probe4);
+      Serial.print("Addresse du senseur 4 : ");
+      Serial.println(tsts4);
+      preferences.putString("add4", tsts4);
+    }
+  } else {
+    if (!sensors.getAddress(Probe4, 4)) {
+      Serial.println("Erreure senseurs 4 non fonctionnel !");
+      passer[4] = 1;
+    } else {
+      String tsts4 = printAddress(Probe4);
+      if (tst4 == tsts4) {
+        Serial.println("Senseur 4 OK !");
+      } else {
+        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
+        for (int i = 0; i < 6; i = i + 1) {
+          passer[i] = 1;
+        }
+      }
+    }
+  }
+  String tst5 = preferences.getString("add5", "0");
+  if (tst5 == "0") {
+    if (!sensors.getAddress(Probe5, 5)) {
+      Serial.println("Erreure pas de senseurs 5");
+      passer[5] = 1;
+    } else {
+      String tsts5 = printAddress(Probe5);
+      Serial.print("Addresse du senseur 5 : ");
+      Serial.println(tsts5);
+      preferences.putString("add5", tsts5);
+    }
+  } else {
+    if (!sensors.getAddress(Probe5, 5)) {
+      Serial.println("Erreure senseurs 5 non fonctionnel !");
+      passer[5] = 1;
+    } else {
+      String tsts5 = printAddress(Probe5);
+      if (tst5 == tsts5) {
+        Serial.println("Senseur 5 OK !");
+      } else {
+        Serial.println("Mismatch de senseurs veuillez reinitialiser !");
+        for (int i = 0; i < 6; i = i + 1) {
+          passer[i] = 1;
+        }
+      }
+    }
+  }
+  sensors.setResolution(Probe0, 10);
+  sensors.setResolution(Probe1, 10);
+  sensors.setResolution(Probe2, 10);
+  sensors.setResolution(Probe3, 10);
+  sensors.setResolution(Probe4, 10);
+  sensors.setResolution(Probe5, 10);
+  for (int i = 0; i < 6; i = i + 1) {
+    String ala = "ala";
+    ala += i;
+    String ahs = "ah";
+    ahs += i;
+    String ams = "am";
+    ams += i;
+    String ehs = "eh";
+    ehs += i;
+    String ems = "em";
+    ems += i;
+    String sen = "se";
+    sen += i;
+    int alar = alarm[i];
+    int iah = allumeH[i];
+    int iam = allumeM[i];
+    int ieh = eteintH[i];
+    int iem = eteintM[i];
+    int sea = senseur[i];
+    int alam = preferences.getInt(string2char(ala), alar);
+    int ahi = preferences.getInt(string2char(ahs), iah);
+    int ami = preferences.getInt(string2char(ams), iam);
+    int ehi = preferences.getInt(string2char(ehs), ieh);
+    int emi = preferences.getInt(string2char(ems), iem);
+    int sed = preferences.getInt(string2char(sen), sea);
+    alarm[i] = alam;
+    allumeH[i] = ahi;
+    allumeM[i] = ami;
+    eteintH[i] = ehi;
+    eteintM[i] = emi;
+    senseur[i] = sed;
+  }
+  configur = preferences.getInt("configur", 0);
+  xTaskCreatePinnedToCore(loop1, "loop1", 4096, NULL, 2, NULL, ARDUINO_RUNNING_CORE); // on dirait que les sensors aiment pas avoir une priorite de 1 alors 2 semble ok
+  WiFiManager wifiManager;
+  wifiManager.setTimeout(240);
+  if (!wifiManager.autoConnect("Setup420")) {
+    delay(3000);
+    ESP.restart();
+    delay(5000);
+  }
+  MDNS.begin("config420");// use preferance pour le nom
+  lesliens();
+  if (configur == 0) {
+    preferences.putInt("configur", 1);
+    configur = 1;
+  }
+  server.on("/", handleRoot);
+  server.on("/timer", handleTimer);
+  server.on("/senseurs", handleSenseur);
+  server.on("/changer", handleChange);
+  server.onNotFound(handleNotFound);
+  const char * headerkeys[] = {"User-Agent"} ;//peut ajouter autres si besoin eg {"User-Agent", "Cookie"}
+  size_t headerkeyssize = sizeof(headerkeys) / sizeof(char*);
+  server.collectHeaders(headerkeys, headerkeyssize );
+  server.begin();
+  Serial.println("Serveur web démaré");
+  MDNS.addService("_http", "_tcp", 80);
+  timeClient.begin();
+  delay(1000);
+  Clock.setClockMode(false);
+  timeClient.update();
+  int ntpheure = timeClient.getHours();
+  int ntpmins = timeClient.getMinutes();
+  Serial.print("Heures : ");
+  Serial.println(ntpheure);
+  Serial.print("Minutes : ");
+  Serial.println(ntpmins);
+  Clock.setHour(ntpheure);
+  Clock.setMinute(ntpmins);
 }
 
 void loop() {
@@ -923,5 +975,17 @@ void loop() {
       WiFi.reconnect();
       delay(6000);
     }
+  }
+  if (currentMillis - previousMillist >= 86400000) {
+    previousMillist = currentMillis;
+    timeClient.update();
+    int ntpheure = timeClient.getHours();
+    int ntpmins = timeClient.getMinutes();
+    Serial.print("Heures : ");
+    Serial.println(ntpheure);
+    Serial.print("Minutes : ");
+    Serial.println(ntpmins);
+    Clock.setHour(ntpheure);
+    Clock.setMinute(ntpmins);
   }
 }
