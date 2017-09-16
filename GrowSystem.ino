@@ -32,7 +32,7 @@ DallasTemperature sensors(&oneWire);
 DeviceAddress Probe0, Probe1, Probe2, Probe3, Probe4, Probe5;
 
 int growled[] = {12, 13, 14, 15, 16, 17}; // les pins pour les lumieres (relay)
-int alarm[] = {25, 26, 27, 28, 29, 30}; // temp en C max (on eteint la led si la temp est plus chaude)
+int alarm[] = {50, 50, 50, 50, 50, 50}; // temp en C max (on eteint la led si la temp est plus chaude)
 int passer[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir quel est desactivee
 int passerx[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir quel est desactivee par temperature
 int etat[] = {0, 0, 0, 0, 0, 0}; // confir pour savoir quel etat est la led
@@ -954,15 +954,16 @@ void setup() {
   timeClient.begin();
   delay(1000);
   Clock.setClockMode(false);
-  timeClient.update();
-  int ntpheure = timeClient.getHours();
-  int ntpmins = timeClient.getMinutes();
-  Serial.print("Heures : ");
-  Serial.println(ntpheure);
-  Serial.print("Minutes : ");
-  Serial.println(ntpmins);
-  Clock.setHour(ntpheure);
-  Clock.setMinute(ntpmins);
+  if (timeClient.update()) {
+    int ntpheure = timeClient.getHours();
+    int ntpmins = timeClient.getMinutes();
+    Serial.print("Heures : ");
+    Serial.println(ntpheure);
+    Serial.print("Minutes : ");
+    Serial.println(ntpmins);
+    Clock.setHour(ntpheure);
+    Clock.setMinute(ntpmins);
+  }
 }
 
 void loop() {
@@ -976,16 +977,17 @@ void loop() {
       delay(6000);
     }
   }
-  if (currentMillis - previousMillist >= 86400000) {
+  if (currentMillis - previousMillist >= 2592000000) { // met le RTC a jour avec le NTP chaques 30 jours
     previousMillist = currentMillis;
-    timeClient.update();
-    int ntpheure = timeClient.getHours();
-    int ntpmins = timeClient.getMinutes();
-    Serial.print("Heures : ");
-    Serial.println(ntpheure);
-    Serial.print("Minutes : ");
-    Serial.println(ntpmins);
-    Clock.setHour(ntpheure);
-    Clock.setMinute(ntpmins);
+    if (timeClient.update()) {
+      int ntpheure = timeClient.getHours();
+      int ntpmins = timeClient.getMinutes();
+      Serial.print("Heures : ");
+      Serial.println(ntpheure);
+      Serial.print("Minutes : ");
+      Serial.println(ntpmins);
+      Clock.setHour(ntpheure);
+      Clock.setMinute(ntpmins);
+    }
   }
 }
