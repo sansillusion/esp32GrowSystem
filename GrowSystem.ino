@@ -22,9 +22,7 @@
 Preferences preferences;
 WebServer server(80);
 WiFiUDP ntpUDP;
-//NTPClient timeClient(ntpUDP);
-NTPClient timeClient(ntpUDP, "time.nrc.ca", -14400, 120000);//heure hiver
-//NTPClient timeClient(ntpUDP, "time.nrc.ca", -18000, 120000);//heure ete
+NTPClient timeClient(ntpUDP, "time.nrc.ca", -18000, 86400000);// timezone -5h et update aux 24h
 #define ONE_WIRE_BUS_PIN 33 // pin 33
 OneWire oneWire(ONE_WIRE_BUS_PIN);
 DallasTemperature sensors(&oneWire);
@@ -74,6 +72,41 @@ char* string2char(String command) {
   }
   return 0;
 }
+
+
+
+int heureEte(int year, int month, int dayOfMonth, int hour) {
+  int DST;
+  // ********************* Calculate offset for Sunday *********************
+  int y = year;                          // DS3231 uses two digit year (required here)
+  int x = (y + y / 4 + 2) % 7;    // remainder will identify which day of month
+  // is Sunday by subtracting x from the one
+  // or two week window.  First two weeks for March
+  // and first week for November
+  // *********** Test DST: BEGINS on 2nd Sunday of March @ 2:00 AM *********
+  if (month == 3 && dayOfMonth == (14 - x) && hour >= 2)
+  {
+    DST = 1;                           // Daylight Savings Time is TRUE (add one hour)
+  }
+  if ((month == 3 && dayOfMonth > (14 - x)) || month > 3)
+  {
+    DST = 1;
+  }
+  // ************* Test DST: ENDS on 1st Sunday of Nov @ 2:00 AM ************
+  if (month == 11 && dayOfMonth == (7 - x) && hour >= 2)
+  {
+    DST = 0;                            // daylight savings time is FALSE (Standard time)
+  }
+  if ((month == 11 && dayOfMonth > (7 - x)) || month > 11 || month < 3)
+  {
+    DST = 0;
+  }
+  return DST;
+}
+
+
+
+
 
 String printAddress(DeviceAddress deviceAddress)
 {
@@ -957,12 +990,30 @@ void setup() {
   if (timeClient.update()) {
     int ntpheure = timeClient.getHours();
     int ntpmins = timeClient.getMinutes();
-    Serial.print("Heures : ");
-    Serial.println(ntpheure);
-    Serial.print("Minutes : ");
-    Serial.println(ntpmins);
-    Clock.setHour(ntpheure);
-    Clock.setMinute(ntpmins);
+    int heureux = Clock.getHour(h12, PM);
+    if (h12 == 1) { //check si le rtc est en mode 12h
+      if (PM == 1) { //si oui et que c'est pm
+        heureux = heureux  + 12; // ajoute 12h
+      }
+    }
+    int lamin = Clock.getMinute();
+    int lanee = Clock.getYear();
+    int lemois = Clock.getMonth(Century);
+    int lejour = Clock.getDate();
+    if (heureEte(lanee, lemois, lejour, heureux)) {
+      Serial.println("heure d'ete");
+      ntpheure = ntpheure + 1;
+    }
+    if (heureux != ntpheure) {
+      Clock.setHour(ntpheure);
+      Serial.print("Heures : ");
+      Serial.println(ntpheure);
+    }
+    if (lamin != ntpmins) {
+      Clock.setMinute(ntpmins);
+      Serial.print("Minutes : ");
+      Serial.println(ntpmins);
+    }
   }
 }
 
@@ -977,17 +1028,35 @@ void loop() {
       delay(6000);
     }
   }
-  if (currentMillis - previousMillist >= 2592000000) { // met le RTC a jour avec le NTP chaques 30 jours
+  if (currentMillis - previousMillist >= 3600000) { // met le RTC a jour avec le NTP chaques 1h si changements
     previousMillist = currentMillis;
     if (timeClient.update()) {
       int ntpheure = timeClient.getHours();
       int ntpmins = timeClient.getMinutes();
-      Serial.print("Heures : ");
-      Serial.println(ntpheure);
-      Serial.print("Minutes : ");
-      Serial.println(ntpmins);
-      Clock.setHour(ntpheure);
-      Clock.setMinute(ntpmins);
+      int heureux = Clock.getHour(h12, PM);
+      if (h12 == 1) { //check si le rtc est en mode 12h
+        if (PM == 1) { //si oui et que c'est pm
+          heureux = heureux + 12; // ajoute 12h
+        }
+      }
+      int lamin = Clock.getMinute();
+      int lanee = Clock.getYear();
+      int lemois = Clock.getMonth(Century);
+      int lejour = Clock.getDate();
+      if (heureEte(lanee, lemois, lejour, heureux)) {
+        Serial.println("heure d'ete");
+        ntpheure = ntpheure + 1;
+      }
+      if (heureux != ntpheure) {
+        Clock.setHour(ntpheure);
+        Serial.print("Heures : ");
+        Serial.println(ntpheure);
+      }
+      if (lamin != ntpmins) {
+        Clock.setMinute(ntpmins);
+        Serial.print("Minutes : ");
+        Serial.println(ntpmins);
+      }
     }
   }
 }
